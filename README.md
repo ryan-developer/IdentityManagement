@@ -1,37 +1,58 @@
-## Welcome to GitHub Pages
+# Create a new Signing Key For Identity Server Token Signing
 
-You can use the [editor on GitHub](https://github.com/ryan-developer/identity-management/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+Certificate tools can be found in the Windows SKD directory:
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+```C:\Program Files (x86)\Windows Kits\10\bin\10.0.18362.0\x86```
 
-### Markdown
+### Generate a new Private Key and Certificate:
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+```makecert -n "CN=IdentityServer" -a sha256 -sv IdentityServer.pvk -r IdentityServer.cer```
 
-```markdown
-Syntax highlighted code block
+### Export the Private/Public key as a Personal Information Exchange file:
 
-# Header 1
-## Header 2
-### Header 3
+```pvk2pfx -pvk IdentityServer.pvk -spc IdentityServer.cer```
 
-- Bulleted
-- List
+When prompted:
+* Enter password
+* Select 'Yes, export the private key'
+* Select 'Personal Information Exchange' option and check:
+    * Include all certificates in the certification path if possible
+    * Export all extended properties
+    * Enable certificate privacy
+* Set a password using 'Aes256-Sha256`
 
-1. Numbered
-2. List
 
-**Bold** and _Italic_ and `Code` text
+### Database migrations
 
-[Link](url) and ![Image](src)
+#### Initialize AspNetIdentity
+```dotnet ef migrations add InitialUserIdentityConfigurationDbMigration -c TenantUserDbContext -o Persistence/Migrations/IdentityServer/AspNetIdentity```
+
+#### Initialize Configuration Tables
+```dotnet ef migrations add InitialIdentityServerConfigurationDbMigration -c ConfigurationDbContext -o Persistence/Migrations/IdentityServer/ConfigurationDb```
+
+#### Initialize Persisted Grant Tables
+```dotnet ef migrations add InitialIdentityServerPersistedGrantDbMigration -c PersistedGrantDbContext -o Persistence/Migrations/IdentityServer/PersistedGrantDb```
+
+#### Migrated in code
+
 ```
+public void Configure(IApplicationBuilder app, IWebHostEnvironment environment)
+{
+    if (environment.IsDevelopment())
+    {
+        InitializeDatabase(app);
+        ...
+    }
+    ...
+}
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/ryan-developer/identity-management/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+private void InitializeDatabase(IApplicationBuilder app)
+{
+    using (var serviceScope = app.ApplicationServices.GetService<IServiceScopeFactory>().CreateScope())
+    {
+        serviceScope.ServiceProvider.GetRequiredService<PersistedGrantDbContext>().Database.Migrate();
+        serviceScope.ServiceProvider.GetRequiredService<ConfigurationDbContext>().Database.Migrate();
+        serviceScope.ServiceProvider.GetRequiredService<TenantUserDbContext>().Database.Migrate();
+    }
+}
+```
